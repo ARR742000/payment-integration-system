@@ -244,60 +244,74 @@ The Payment Integration System is designed using a microservices architecture, w
 ## 🏗️ System Architecture Diagram
 
 ```mermaid
-graph TD
+graph LR
 
-    Merchant[Merchant Application]
+Merchant[Merchant Application]
 
-    Eureka[Netflix Eureka Server]
+Validation[Payment Validation Service]
+Redis[(Redis Cache)]
 
-    Validation[Payment Validation Service]
-    Redis[(Redis Cache)]
+Processing[Payment Processing Service]
+MySQL[(MySQL Database)]
 
-    Processing[Payment Processing Service]
-    MySQL[(MySQL Database)]
+Provider[Trustly Provider Service]
 
-    Provider[Trustly Provider Service]
+Mock[Trustly Mock Service]
 
-    Mock[Trustly Mock Service]
+Trustly[Trustly Deposit API]
 
-    Trustly[Trustly Deposit API]
+Eureka[(Netflix Eureka Server)]
 
-    Merchant -->|1. Payment Request| Validation
+Merchant -->|Payment Request| Validation
 
-    Validation -->|Validate Payload| Redis
+Validation -->|Payload Validation| Redis
+Validation -->|Verify HmacSHA256| Redis
+Validation -->|Forward Valid Request| Processing
 
-    Validation -->|Verify HmacSHA256 Signature| Redis
+Processing -->|Create Transaction| MySQL
+Processing -->|Invoke Provider| Provider
 
-    Validation -->|Forward Valid Request| Processing
+Provider -->|Production| Trustly
+Provider -. Development .-> Mock
 
-    Processing -->|Generate UUID| MySQL
+Trustly -->|Redirect URL| Provider
+Mock -->|Redirect URL| Provider
 
-    Processing -->|Store Payment Details| MySQL
+Provider -->|Payment Response| Processing
 
-    Processing -->|Invoke Provider| Provider
+Processing -->|Update Status| MySQL
 
-    Provider -->|Call Deposit API| Trustly
+Processing -->|Payment Response| Validation
 
-    Trustly -->|Redirect URL| Provider
+Validation -->|Response| Merchant
 
-    Provider -->|Deposit Response| Processing
+Merchant -->|Customer Completes Payment| Mock
 
-    Processing -->|Payment Response| Validation
+Mock -->|Webhook Callback| Processing
 
-    Validation -->|Response| Merchant
+Processing -->|Update Final Status| MySQL
 
-    Merchant -->|Redirect Customer| Mock
+Processing -->|Notify Merchant| Merchant
 
-    Mock -->|Webhook Callback| Processing
-
-    Processing -->|Update Payment Status| MySQL
-
-    Processing -->|Notify Merchant| Merchant
-
-    Validation -. Register .-> Eureka
-    Processing -. Register .-> Eureka
-    Provider -. Register .-> Eureka
+Validation -. Register .-> Eureka
+Processing -. Register .-> Eureka
+Provider -. Register .-> Eureka
+Mock -. Register .-> Eureka
 ```
+
+## 🏛️ Architecture Principles
+
+The Payment Integration System follows modern backend architecture principles to ensure scalability, maintainability, and secure payment processing.
+
+- Single Responsibility Principle
+- Stateless REST APIs
+- Microservices Architecture
+- Database per Service
+- Provider Abstraction Layer
+- Centralized Payment Processing
+- Service Discovery using Netflix Eureka
+- Redis-based Replay Protection
+- Asynchronous Webhook Processing
 
 ## 🔄 End-to-End Payment Flow Diagram
 
@@ -306,7 +320,6 @@ sequenceDiagram
     autonumber
 
     actor Merchant as Merchant Application
-
     participant Validation as Payment Validation Service
     participant Redis as Redis Cache
     participant Processing as Payment Processing Service
@@ -314,28 +327,21 @@ sequenceDiagram
     participant Provider as Trustly Provider Service
     participant Mock as Trustly Mock Service
 
-    Merchant->>Validation: POST /payments
+    Merchant->>Validation: Submit Payment Request
 
-    Validation->>Validation: Validate Request Payload
-
-    Validation->>Redis: Validate Request / Replay Check
-
-    Redis-->>Validation: Request Valid
+    Validation->>Validation: Validate Payload
+    Validation->>Redis: Check Replay Protection
+    Redis-->>Validation: Request Accepted
 
     Validation->>Validation: Verify HmacSHA256 Signature
+    Validation->>Processing: Forward Valid Request
 
-    Validation->>Processing: Forward Validated Request
-
-    Processing->>Processing: Generate Transaction UUID
-
-    Processing->>DB: Save Payment (CREATED)
-
-    DB-->>Processing: Success
+    Processing->>DB: Save Transaction (CREATED)
+    DB-->>Processing: Transaction Saved
 
     Processing->>Provider: Initiate Payment
 
-    Provider->>Mock: Call Trustly Mock API
-
+    Provider->>Mock: Request Deposit
     Mock-->>Provider: Redirect URL
 
     Provider-->>Processing: Payment Response
@@ -346,14 +352,13 @@ sequenceDiagram
 
     Validation-->>Merchant: Payment Response
 
-    Note over Merchant,Mock:
-    Customer completes payment using Redirect URL
+    Note over Merchant,Mock: Customer completes payment
 
-    Mock->>Processing: Payment Webhook Callback
+    Mock->>Processing: Webhook Callback
 
     Processing->>DB: Update Status (SUCCESS / FAILED)
 
-    Processing-->>Merchant: Payment Status Notification
+    Processing-->>Merchant: Final Payment Status
 ```
 
 ## 🔐 Security & Data Integrity
@@ -543,12 +548,14 @@ cd payment-integration-system
 ```text
 payment-integration-system
 │
-├── eureka-server
+├── database
+├── eureka-service-registry
 ├── payment-validation-service
 ├── payment-processing-service
 ├── trustly-provider-service
 ├── trustly-mock-service
-└── common-library
+├── README.md
+└── .gitignore
 ```
 
 ---
@@ -787,6 +794,17 @@ payment-integration-system
 │
 └── trustly-mock-service
 ```
+## 🎯 Design Patterns Used
+
+The project applies several software design patterns commonly used in enterprise Java applications.
+
+- Layered Architecture
+- Adapter Pattern (Trustly Provider Service)
+- DTO Pattern
+- Dependency Injection
+- Service Registry Pattern (Netflix Eureka)
+- Builder Pattern (Lombok)
+
 ## 📚 Learning Outcomes
 
 Through this project, I gained practical experience in:
